@@ -1,0 +1,5 @@
+python-telegram-bot
+discord.py
+apscheduler
+python-dotenv
+tzdata
