@@ -3,3 +3,4 @@ discord.py
 apscheduler
 python-dotenv
 tzdata
+flask
