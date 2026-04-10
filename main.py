@@ -1,5 +1,7 @@
 import asyncio
 import os
+from threading import Thread
+from flask import Flask
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 import discord
@@ -17,6 +19,21 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DISCORD_TOKEN  = os.getenv("DISCORD_TOKEN")
+
+# Flask web server for Render health checks
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!", 200
+
+def run_http_server():
+    port = int(os.environ.get("PORT", 8080))
+    # Bind to 0.0.0.0 so Render can forward traffic
+    app.run(host="0.0.0.0", port=port)
+
+# Start web server in background thread
+Thread(target=run_http_server, daemon=True).start()
 
 print("Bots are starting...")
 init_db()
@@ -52,11 +69,15 @@ async def main():
 
         print("Bots are running!")
 
-        try:
-            await discord_client.start(DISCORD_TOKEN)
-        finally:
-            await telegram_app.updater.stop()
-            await telegram_app.stop()
+        # Keep Discord running with auto‑reconnect
+        while True:
+            try:
+                await discord_client.start(DISCORD_TOKEN)
+            except Exception as e:
+                print(f"Discord client crashed: {e}. Restarting in 5 seconds...")
+                await asyncio.sleep(5)
+            else:
+                break
 
 
 if __name__ == "__main__":
