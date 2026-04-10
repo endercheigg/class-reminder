@@ -11,69 +11,65 @@ def start_scheduler(telegram_app, discord_client):
     scheduler = AsyncIOScheduler()
 
     async def check_lessons():
-        await cleanup_old_temp_moves()
+        try:
+            await cleanup_old_temp_moves()
 
-        classes = get_all_classes()
-        current_week = get_current_week_start()
-        
-        conn = sqlite3.connect("classes.db")
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT lesson_name, temp_day, temp_time, telegram_id, discord_id FROM temp_moves WHERE week_start=?",
-            (current_week,)
-        )
-        temp_moves = cur.fetchall()
-        conn.close()
-        
-        # Combine classes (temp overrides permanent)
-        class_dict = {}
-        for lesson, day, time, tg, dc in classes:
-            key = (lesson, tg, dc)
-            class_dict[key] = {"day": day, "time": time, "tg": tg, "dc": dc, "is_temp": False}
-        for lesson, day, time, tg, dc in temp_moves:
-            key = (lesson, tg, dc)
-            class_dict[key] = {"day": day, "time": time, "tg": tg, "dc": dc, "is_temp": True}
-        
-        for (lesson, tg, dc), info in class_dict.items():
-            # Get user's timezone
-            tz = get_user_timezone(tg=tg if tg != "none" else None, dc=dc if dc != "none" else None)
-            if not tz:
-                tz = "UTC"
+            classes = get_all_classes()
+            current_week = get_current_week_start()
             
-            # Convert class UTC time to user's local time
-            local_day, local_time = utc_to_local(info["day"], info["time"], tz)
+            conn = sqlite3.connect("classes.db")
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT lesson_name, temp_day, temp_time, telegram_id, discord_id FROM temp_moves WHERE week_start=?",
+                (current_week,)
+            )
+            temp_moves = cur.fetchall()
+            conn.close()
             
-            # Get current local time for this user
-            now_local = datetime.now(ZoneInfo(tz))
-            current_local_day = now_local.isoweekday()
-            current_local_time = now_local.strftime("%H:%M")
+            class_dict = {}
+            for lesson, day, time, tg, dc in classes:
+                key = (lesson, tg, dc)
+                class_dict[key] = {"day": day, "time": time, "tg": tg, "dc": dc, "is_temp": False}
+            for lesson, day, time, tg, dc in temp_moves:
+                key = (lesson, tg, dc)
+                class_dict[key] = {"day": day, "time": time, "tg": tg, "dc": dc, "is_temp": True}
             
-            # Calculate reminder time (5 minutes before class)
-            try:
-                class_local_dt = datetime.strptime(local_time, "%H:%M")
-                reminder_dt = class_local_dt - timedelta(minutes=5)
-                reminder_time = reminder_dt.strftime("%H:%M")
-            except:
-                continue
-            
-            # Send reminder if current time matches reminder time AND day matches
-            if current_local_day == local_day and current_local_time == reminder_time:
-                text = f"📚 {lesson} starts in 5 minutes!"
-                if info["is_temp"]:
-                    text += " ⚠️ (Moved for this week)"
+            for (lesson, tg, dc), info in class_dict.items():
+                tz = get_user_timezone(tg=tg if tg != "none" else None, dc=dc if dc != "none" else None)
+                if not tz:
+                    tz = "UTC"
                 
-                if tg and tg != "none":
-                    try:
-                        await telegram_app.bot.send_message(chat_id=tg, text=text)
-                    except Exception as e:
-                        print(f"Failed to send Telegram reminder to {tg}: {e}")
+                local_day, local_time = utc_to_local(info["day"], info["time"], tz)
+                now_local = datetime.now(ZoneInfo(tz))
+                current_local_day = now_local.isoweekday()
+                current_local_time = now_local.strftime("%H:%M")
                 
-                if dc and dc != "none":
-                    try:
-                        user = await discord_client.fetch_user(int(dc))
-                        await user.send(text)
-                    except Exception as e:
-                        print(f"Failed to send Discord reminder to {dc}: {e}")
+                try:
+                    class_local_dt = datetime.strptime(local_time, "%H:%M")
+                    reminder_dt = class_local_dt - timedelta(minutes=5)
+                    reminder_time = reminder_dt.strftime("%H:%M")
+                except:
+                    continue
+                
+                if current_local_day == local_day and current_local_time == reminder_time:
+                    text = f"📚 {lesson} starts in 5 minutes!"
+                    if info["is_temp"]:
+                        text += " ⚠️ (Moved for this week)"
+                    
+                    if tg and tg != "none":
+                        try:
+                            await telegram_app.bot.send_message(chat_id=tg, text=text)
+                        except Exception as e:
+                            print(f"Failed to send Telegram reminder to {tg}: {e}")
+                    
+                    if dc and dc != "none":
+                        try:
+                            user = await discord_client.fetch_user(int(dc))
+                            await user.send(text)
+                        except Exception as e:
+                            print(f"Failed to send Discord reminder to {dc}: {e}")
+        except Exception as e:
+            print(f"Scheduler error: {e}")
 
     async def cleanup_old_temp_moves():
         conn = sqlite3.connect("classes.db")
