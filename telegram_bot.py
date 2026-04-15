@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from database import (
     add_class, get_user_classes, get_linked_ids, delete_class,
     move_class_temp, get_class_by_name, create_share_code, consume_share_code,
@@ -282,7 +283,7 @@ async def next_class(update, context):
         await update.message.reply_text("No classes saved.")
         return
 
-    now_local = datetime.now()
+    now_local = datetime.now(ZoneInfo(tz))
     best = None
     best_minutes = None
 
